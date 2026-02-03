@@ -49,8 +49,9 @@ def load_watchlist(watchlist_path: str) -> list:
     try:
         with open(watchlist_path, 'r') as f:
             content = f.read()
-            # Split by comma and newline, strip whitespace
-            symbols = [s.strip() for s in content.replace('\n', ',').split(',') if s.strip()]
+            # Split by comma and newline, strip whitespace, filter out comments
+            symbols = [s.strip() for s in content.replace('\n', ',').split(',') 
+                      if s.strip() and not s.strip().startswith('#')]
             return symbols
     except FileNotFoundError:
         print(f"Watchlist file not found: {watchlist_path}")

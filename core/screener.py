@@ -2,6 +2,7 @@
 Main adaptive screener with intelligent tiering
 """
 
+import pandas as pd
 import time
 from typing import List, Dict, Optional
 from config.api_config import DataFetcher
@@ -411,7 +412,3 @@ class AdaptiveScreener:
     def _empty_result(self):
         """Return empty result for errors"""
         return self._create_result([], 3, "Unknown")
-
-
-# Import pandas for the NA checks
-import pandas as pd

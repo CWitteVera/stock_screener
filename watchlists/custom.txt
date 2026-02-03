@@ -1,5 +1,7 @@
-# Add your custom stock symbols here, one per line or comma-separated
+# Add your custom stock symbols here
+# One per line or comma-separated
 # Example:
 # AAPL,MSFT,GOOGL
+# Or:
 # TSLA
 # NVDA
