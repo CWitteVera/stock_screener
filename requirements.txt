@@ -1,0 +1,17 @@
+# Core data
+yfinance>=0.2.35
+pandas>=2.0.0
+numpy>=1.24.0
+
+# Technical analysis
+pandas-ta>=0.3.14b
+
+# Optional APIs
+requests>=2.31.0
+
+# UI
+streamlit>=1.30.0
+plotly>=5.18.0
+
+# Utilities
+python-dotenv>=1.0.0
