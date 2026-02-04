@@ -12,10 +12,17 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from ui.dashboard import render_dashboard, render_position_monitor
+from ui.enhanced_dashboard import (
+    render_capital_sidebar, render_dual_opportunities, 
+    render_ledger_tab, render_debug_tab
+)
 from config.settings import (
     CAPITAL_PER_TRADE, PRIMARY_RETURN_TARGET, FALLBACK_RETURN_TARGET,
     MAX_LOSS_PERCENT, MAX_HOLD_DAYS
 )
+from models.capital_account import CapitalAccount
+from ledger.trading_ledger import TradingLedger
+from day_trading.day_screener import DayScreener
 
 # Page configuration
 st.set_page_config(
@@ -25,37 +32,80 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Initialize session state for capital account and ledger
+if 'capital_account' not in st.session_state:
+    st.session_state.capital_account = CapitalAccount()
+    
+if 'ledger' not in st.session_state:
+    st.session_state.ledger = TradingLedger()
+
 def main():
     """Main application"""
     
     # Title and description
-    st.title("🎯 Intelligent Swing Trading Screener")
-    st.caption("Adaptive return targeting: 15% → 8% → Wait | Optimized for $1000 trades")
+    st.title("🎯 Intelligent Trading Screener")
+    st.caption("Dual Dashboard: Swing Trading (15%+) & Day Trading (2%+) | Adaptive Strategy")
     
     # Sidebar controls
     with st.sidebar:
         st.header("⚙️ Configuration")
         
-        # Mode selection
-        mode = st.radio(
-            "Select Mode",
-            ["🔍 Scan for Trades", "💼 Monitor Position"],
+        # Capital account display
+        render_capital_sidebar(st.session_state.capital_account)
+        
+        st.markdown("---")
+        
+        # Mode checkboxes (new enhanced mode)
+        st.subheader("Trading Modes")
+        
+        enable_swing = st.checkbox("📊 Swing Trading", value=True, 
+                                   help="Scan for 15%+ swing trades (5-10 days)")
+        
+        enable_day_monitor = st.checkbox("⚡ Day Trade Monitor", value=False,
+                                        help="Monitor 2%+ intraday opportunities")
+        
+        # Execute day trades only if capital >= $7k
+        can_execute_day = st.session_state.capital_account.current_capital >= 7000.0
+        
+        if can_execute_day:
+            execute_day_trades = st.checkbox("🔴 Execute Day Trades", value=False,
+                                            help="Execute day trades (requires $7k+)")
+        else:
+            execute_day_trades = False
+            if enable_day_monitor:
+                st.info("📊 Monitor-only mode\n\nNeed $7k to execute")
+        
+        st.markdown("---")
+        
+        # Tab mode selection
+        view_mode = st.radio(
+            "Select View",
+            ["📊 Today's Opportunities", "💼 Active Positions", "📚 Trading Ledger", "🔧 Debug & Analysis"],
             index=0
         )
         
-        if mode == "🔍 Scan for Trades":
+        # Store in session state
+        st.session_state.enable_swing = enable_swing
+        st.session_state.enable_day_monitor = enable_day_monitor
+        st.session_state.execute_day_trades = execute_day_trades
+        
+        # Scan controls (only for opportunities view)
+        if view_mode == "📊 Today's Opportunities":
             render_scan_controls()
-        else:
-            render_monitor_controls()
         
         # Information section
         render_info_section()
     
-    # Main content area
-    if mode == "🔍 Scan for Trades":
-        render_scan_mode()
-    else:
+    # Main content area - tabbed interface
+    if view_mode == "📊 Today's Opportunities":
+        render_opportunities_tab()
+    elif view_mode == "💼 Active Positions":
         render_monitor_mode()
+    elif view_mode == "📚 Trading Ledger":
+        render_ledger_tab(st.session_state.ledger)
+    else:  # Debug & Analysis
+        scan_results = st.session_state.get('last_scan_results', None)
+        render_debug_tab(scan_results)
 
 def render_scan_controls():
     """Render scan configuration controls"""
@@ -98,13 +148,59 @@ def render_scan_controls():
         }
         st.rerun()
 
-def render_monitor_controls():
-    """Render position monitoring controls"""
+def render_opportunities_tab():
+    """Render opportunities tab with dual dashboard"""
     
-    st.markdown("---")
-    st.subheader("Position Monitor")
+    if st.session_state.get('scanning'):
+        # Clear scanning flag
+        st.session_state.scanning = False
+        
+        # Run scans based on enabled modes
+        swing_trades = []
+        day_opportunities = []
+        
+        if st.session_state.enable_swing:
+            with st.spinner(f"🔍 Scanning swing opportunities..."):
+                from core.screener import AdaptiveScreener
+                screener = AdaptiveScreener()
+                results = screener.scan_sector(
+                    st.session_state.scan_params['sector'],
+                    st.session_state.scan_params['min_return']
+                )
+                swing_trades = results.get('trades', [])
+                st.session_state.last_scan_results = results
+        
+        if st.session_state.enable_day_monitor:
+            with st.spinner(f"⚡ Scanning day trade opportunities..."):
+                day_screener = DayScreener()
+                # Scan sector for day trades
+                from config.sectors import SECTOR_TICKERS
+                sector_tickers = SECTOR_TICKERS.get(st.session_state.scan_params['sector'], [])
+                
+                for symbol in sector_tickers[:10]:  # Limit to first 10 for performance
+                    try:
+                        opp = day_screener.analyze_stock(symbol, st.session_state.scan_params['sector'])
+                        if opp:
+                            day_opportunities.append(opp)
+                    except:
+                        pass
+                
+                day_opportunities.sort(key=lambda x: x.overall_score, reverse=True)
+        
+        # Render dual dashboard
+        if st.session_state.enable_swing or st.session_state.enable_day_monitor:
+            render_dual_opportunities(
+                swing_trades, 
+                day_opportunities,
+                st.session_state.capital_account,
+                st.session_state.execute_day_trades
+            )
+        else:
+            st.warning("⚠️ Enable at least one trading mode in the sidebar to scan for opportunities.")
     
-    st.info("Switch to the main area to monitor your positions")
+    else:
+        # Welcome screen
+        render_welcome_screen()
 
 def render_info_section():
     """Render information section in sidebar"""
@@ -150,21 +246,6 @@ def render_info_section():
     st.markdown("---")
     st.caption("Made with ❤️ for swing traders")
 
-def render_scan_mode():
-    """Render scanning interface"""
-    
-    if st.session_state.get('scanning'):
-        # Clear scanning flag
-        scanning = st.session_state.scanning
-        st.session_state.scanning = False
-        
-        # Run scan
-        render_dashboard(st.session_state.scan_params)
-        
-    else:
-        # Welcome screen
-        render_welcome_screen()
-
 def render_monitor_mode():
     """Render position monitoring interface"""
     
@@ -174,74 +255,82 @@ def render_welcome_screen():
     """Render welcome/info screen"""
     
     st.markdown("---")
-    st.header("Welcome to the Swing Trading Screener!")
+    st.header("Welcome to the Intelligent Trading Screener!")
     
-    st.info("👈 Select a sector and click 'Start Scan' to find swing trade opportunities!")
+    st.info("👈 Enable trading modes and click 'Start Scan' to find opportunities!")
     
     # Feature highlights
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        st.markdown("### 🎯 Adaptive Targeting")
+        st.markdown("### 📊 Swing Trading")
         st.markdown("""
-        Intelligently adjusts return targets:
-        - 15%+ opportunities → TRADE
-        - 8-14% opportunities → CONSIDER
-        - <8% opportunities → WAIT
+        Medium-term opportunities:
+        - 15%+ return targets
+        - 5-10 day timeframe
+        - Technical + fundamental
+        - Position sizing
         """)
     
     with col2:
-        st.markdown("### 📊 Technical Analysis")
+        st.markdown("### ⚡ Day Trading")
         st.markdown("""
-        Comprehensive scoring:
-        - MACD signals
-        - RSI momentum
-        - Volume patterns
-        - Breakout detection
-        - Price momentum
+        Intraday opportunities:
+        - 2-5% intraday moves
+        - High confidence (85%+)
+        - Monitor-only until $7k
+        - Pre-market scanner
         """)
     
     with col3:
-        st.markdown("### 💰 Risk Management")
+        st.markdown("### 💰 Capital Tracking")
         st.markdown("""
-        Built-in protection:
-        - Automatic stop loss
-        - Position sizing
-        - Risk/reward ratios
-        - Support-based stops
+        Built-in account management:
+        - Track progress to $7k
+        - Paycheck integration
+        - Win rate tracking
+        - Time to PDT goal
         """)
     
-    # Quick stats (placeholder)
+    # Quick stats from capital account
     st.markdown("---")
-    st.subheader("📈 Quick Stats")
+    st.subheader("📈 Your Stats")
+    
+    capital = st.session_state.capital_account
+    ledger = st.session_state.ledger
     
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        st.metric("Active Positions", "0", help="Number of open trades")
+        st.metric("Current Capital", f"${capital.current_capital:,.2f}")
     with col2:
-        st.metric("Today's Scans", "0", help="Scans performed today")
+        st.metric("Total Trades", capital.total_trades)
     with col3:
-        st.metric("Total Opportunities", "0", help="Trades identified today")
+        st.metric("Win Rate", f"{capital.get_win_rate():.1f}%")
     with col4:
-        st.metric("API Calls Used", "0", help="FMP API calls today")
+        st.metric("Ledger Entries", len(ledger.entries))
     
     # Instructions
     st.markdown("---")
     st.subheader("🚀 Quick Start")
     
     st.markdown("""
-    1. **Select a sector** from the sidebar (Technology, Healthcare, etc.)
-    2. **Set your target return** (default: 15%)
+    1. **Enable trading modes** in sidebar (Swing and/or Day Trading)
+    2. **Select a sector** to scan
     3. **Click "Start Scan"** to find opportunities
-    4. **Review the results** and select top trades
-    5. **Export to Fidelity** or your broker
-    6. **Monitor positions** using the Position Monitor mode
+    4. **Review dual dashboard** with both swing and day trades
+    5. **Track in ledger** to monitor accuracy
+    6. **Export trades** to your broker
     """)
     
     st.markdown("---")
-    st.success("🆓 This screener is 100% FREE! All analysis uses yfinance (no API key required)")
-    st.info("💡 Optional: Add FMP API key in .env file for enhanced fundamental data")
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.success("🆓 100% FREE - Uses yfinance (no API key required)")
+    
+    with col2:
+        st.info("📊 Track to $7k to unlock day trade execution")
 
 if __name__ == '__main__':
     main()
