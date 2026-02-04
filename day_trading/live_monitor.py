@@ -103,7 +103,10 @@ class LiveMonitor:
     def __init__(self, check_interval: int = DAY_TRADE_CHECK_INTERVAL):
         self.check_interval = check_interval  # minutes
         self.monitored_trades: List[MonitoredTrade] = []
-        self.data_file = "/home/runner/work/stock_screener/stock_screener/data/day_trading/monitored_trades.json"
+        
+        # Use relative path from script location
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        self.data_file = os.path.join(base_dir, 'data', 'day_trading', 'monitored_trades.json')
         self._load_trades()
         
         # Parse force exit time

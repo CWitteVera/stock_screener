@@ -297,7 +297,7 @@ def export_html_report(entries: List[LedgerEntry], filepath: str) -> bool:
     
     <h2>Performance Summary</h2>
     <div class="metric">Win Rate: <strong>{pl_summary['win_rate']:.2f}%</strong></div>
-    <div class="metric">Total Return: <strong class="{'positive' if pl_summary['total_return_pct'] > 0 else 'negative'}">{pl_summary['total_return_pct']:.2f}%</strong></div>
+    <div class="metric">Total Return: <strong class="{'positive' if pl_summary['total_return_pct'] > 0 else 'negative'}">{pl_summary['total_return_pct']:+.2f}%</strong></div>
     <div class="metric">Average Return: <strong>{pl_summary['avg_return_pct']:.2f}%</strong></div>
     
     <h2>All Trades</h2>

@@ -279,12 +279,13 @@ class IntradayStrategy:
             print(f"Error calculating momentum for {symbol}: {e}")
             return 0.0
     
-    def evaluate_stock(self, symbol: str) -> Dict:
+    def evaluate_stock(self, symbol: str, verbose: bool = False) -> Dict:
         """
         Complete evaluation of a stock for day trading
         Returns dict with all metrics and scores
         """
-        print(f"Evaluating {symbol} for day trading...")
+        if verbose:
+            print(f"Evaluating {symbol} for day trading...")
         
         # Run all filters
         gap_pass, gap_pct = self.check_premarket_gap(symbol)
