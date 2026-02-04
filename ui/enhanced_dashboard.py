@@ -244,7 +244,7 @@ def render_ledger_tab(ledger: TradingLedger):
         metrics['prediction_accuracy'] = accuracy.get('return_accuracy', 0.0)
         metrics['confidence_calibration'] = get_win_rate(ledger.entries)  # Use win rate as proxy
         metrics['roi_accuracy'] = accuracy.get('return_accuracy', 0.0)
-    except:
+    except Exception as e:
         metrics['prediction_accuracy'] = 0.0
         metrics['confidence_calibration'] = 0.0
         metrics['roi_accuracy'] = 0.0
@@ -257,11 +257,9 @@ def render_ledger_tab(ledger: TradingLedger):
     with col2:
         st.metric("Win Rate", f"{metrics.get('win_rate', 0):.1f}%")
     with col3:
-        # Calculate total profit from avg * trades
-        total_trades = metrics.get('total_trades', 0)
-        avg_profit = metrics.get('avg_profit_per_trade', 0)
-        total_profit = total_trades * avg_profit if total_trades > 0 else 0
-        st.metric("Total Profit", format_currency(total_profit))
+        # Use total return percentage from P&L summary
+        total_return = metrics.get('total_return_pct', 0)
+        st.metric("Total Return", f"{total_return:.1f}%")
     with col4:
         st.metric("Avg per Trade", format_currency(metrics.get('avg_profit_per_trade', 0)))
     
