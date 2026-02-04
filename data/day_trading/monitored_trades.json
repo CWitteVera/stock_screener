@@ -1,0 +1,28 @@
+{
+  "last_updated": "2026-02-04T16:11:20.990963",
+  "trades": [
+    {
+      "symbol": "AAPL",
+      "name": "Apple Inc.",
+      "sector": "Technology",
+      "setup_type": "GAP_UP",
+      "executed": false,
+      "entry_time": "2026-02-04T15:49:24.546592",
+      "entry_price": 175.5,
+      "target_price": 180.0,
+      "stop_price": 172.0,
+      "shares": 5,
+      "position_value": 877.5,
+      "current_price": 175.5,
+      "current_pnl": 0.0,
+      "current_pnl_pct": 0.0,
+      "status": "MONITORING",
+      "exit_time": null,
+      "exit_price": null,
+      "estimated_return_pct": 2.6,
+      "confidence": 92,
+      "catalyst": "New product announcement",
+      "checks": []
+    }
+  ]
+}

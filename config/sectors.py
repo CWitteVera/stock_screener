@@ -56,3 +56,14 @@ def load_watchlist(watchlist_path: str) -> list:
     except FileNotFoundError:
         print(f"Watchlist file not found: {watchlist_path}")
         return []
+
+def load_sector_tickers() -> dict:
+    """Load all sector tickers from watchlist files"""
+    sector_tickers = {}
+    for sector_name in SECTORS.keys():
+        watchlist_path = get_sector_watchlist_path(sector_name)
+        sector_tickers[sector_name] = load_watchlist(watchlist_path)
+    return sector_tickers
+
+# Pre-load sector tickers for easy access
+SECTOR_TICKERS = load_sector_tickers()
