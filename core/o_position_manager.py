@@ -123,7 +123,9 @@ class OPositionManager:
         unrealized_gain = position_value - cost_basis
         
         swing_profit = position_value * (swing_return / 100)
-        o_dividend_7days = (self.shares * 0.2765) / 30 * 7  # 7-day dividend
+        # O monthly dividend: $0.2765 per share, pro-rated for 7-day holding period
+        o_monthly_dividend_per_share = 0.2765
+        o_dividend_7days = (self.shares * o_monthly_dividend_per_share) / 30 * 7
         tax_on_o_gains = unrealized_gain * 0.30  # 30% short-term capital gains
         
         net_advantage = swing_profit - o_dividend_7days - tax_on_o_gains
