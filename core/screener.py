@@ -412,3 +412,291 @@ class AdaptiveScreener:
     def _empty_result(self):
         """Return empty result for errors"""
         return self._create_result([], 3, "Unknown")
+    
+    def scan_universe(self, universe_name: str = "high_volume", min_return: float = 5.0, 
+                      min_confidence: int = 60) -> Dict:
+        """
+        Scan a predefined stock universe
+        
+        Args:
+            universe_name: "sp500" | "nasdaq100" | "high_volume" | "all_markets"
+            min_return: Minimum return % (can be 0.0)
+            min_confidence: Minimum confidence % (can be 0)
+        """
+        from pathlib import Path
+        
+        # Load universe file
+        universe_path = Path(f"watchlists/universe/{universe_name}.txt")
+        
+        if not universe_path.exists():
+            raise FileNotFoundError(f"Universe file not found: {universe_path}")
+        
+        # Read symbols
+        with open(universe_path, 'r') as f:
+            content = f.read()
+        
+        # Parse symbols (comma-separated or newline-separated)
+        symbols = []
+        for line in content.split('\n'):
+            line = line.strip()
+            if line and not line.startswith('#'):
+                symbols.extend([s.strip() for s in line.split(',') if s.strip()])
+        
+        symbols = list(set(symbols))  # Remove duplicates
+        
+        logger.info(f"Loaded {len(symbols)} symbols from {universe_name} universe")
+        
+        # Scan with stage tracking
+        return self._scan_with_stage_tracking(symbols, universe_name, min_return, min_confidence)
+    
+    def _scan_with_stage_tracking(self, symbols: List[str], universe_name: str, 
+                                   min_return: float, min_confidence: int) -> Dict:
+        """
+        Scan symbols with detailed stage tracking
+        """
+        import time
+        
+        stage_results = []
+        start_time = time.time()
+        
+        # Stage 1: Initial Load
+        logger.info(f"Stage 1: Fetching data for {len(symbols)} symbols...")
+        stage_start = time.time()
+        
+        loaded_stocks = []
+        failed_symbols = []
+        
+        for symbol in symbols:
+            try:
+                data = self.data_fetcher.get_stock_data(symbol)
+                if data is not None and data.get('history') is not None and len(data['history']) >= 50:
+                    loaded_stocks.append(symbol)
+                else:
+                    failed_symbols.append(symbol)
+            except Exception as e:
+                failed_symbols.append(symbol)
+        
+        stage_results.append({
+            'stage': 1,
+            'name': 'Initial Load',
+            'description': 'Fetch stock data',
+            'input_count': len(symbols),
+            'passed_count': len(loaded_stocks),
+            'failed_count': len(failed_symbols),
+            'pass_rate': len(loaded_stocks) / len(symbols) * 100 if symbols else 0,
+            'time_seconds': time.time() - stage_start
+        })
+        
+        logger.info(f"Stage 1 complete: {len(loaded_stocks)} passed, {len(failed_symbols)} failed")
+        
+        # Stage 2: Price Filter
+        stage_start = time.time()
+        price_filtered = []
+        
+        for symbol in loaded_stocks:
+            try:
+                data = self.data_fetcher.get_stock_data(symbol)
+                if data and 'history' in data:
+                    current_price = data['current_price']
+                    
+                    if MIN_PRICE <= current_price <= MAX_PRICE:
+                        price_filtered.append(symbol)
+            except:
+                pass
+        
+        stage_results.append({
+            'stage': 2,
+            'name': 'Price Filter',
+            'description': f'${MIN_PRICE} - ${MAX_PRICE}',
+            'input_count': len(loaded_stocks),
+            'passed_count': len(price_filtered),
+            'failed_count': len(loaded_stocks) - len(price_filtered),
+            'pass_rate': len(price_filtered) / len(loaded_stocks) * 100 if loaded_stocks else 0,
+            'time_seconds': time.time() - stage_start
+        })
+        
+        logger.info(f"Stage 2 complete: {len(price_filtered)} passed price filter")
+        
+        # Stage 3: Volume Filter
+        stage_start = time.time()
+        volume_filtered = []
+        
+        for symbol in price_filtered:
+            try:
+                data = self.data_fetcher.get_stock_data(symbol)
+                if data and 'history' in data:
+                    avg_volume = data['avg_volume']
+                    
+                    if avg_volume >= MIN_VOLUME:
+                        volume_filtered.append(symbol)
+            except:
+                pass
+        
+        stage_results.append({
+            'stage': 3,
+            'name': 'Volume Filter',
+            'description': f'> {MIN_VOLUME:,} shares/day',
+            'input_count': len(price_filtered),
+            'passed_count': len(volume_filtered),
+            'failed_count': len(price_filtered) - len(volume_filtered),
+            'pass_rate': len(volume_filtered) / len(price_filtered) * 100 if price_filtered else 0,
+            'time_seconds': time.time() - stage_start
+        })
+        
+        logger.info(f"Stage 3 complete: {len(volume_filtered)} passed volume filter")
+        
+        # Stage 4: Market Cap Filter
+        stage_start = time.time()
+        marketcap_filtered = []
+        
+        for symbol in volume_filtered:
+            try:
+                data = self.data_fetcher.get_stock_data(symbol)
+                if data and 'market_cap' in data:
+                    market_cap = data['market_cap']
+                    
+                    if market_cap >= MIN_MARKET_CAP:
+                        marketcap_filtered.append(symbol)
+            except:
+                pass
+        
+        stage_results.append({
+            'stage': 4,
+            'name': 'Market Cap Filter',
+            'description': f'> ${MIN_MARKET_CAP/1e9:.1f}B',
+            'input_count': len(volume_filtered),
+            'passed_count': len(marketcap_filtered),
+            'failed_count': len(volume_filtered) - len(marketcap_filtered),
+            'pass_rate': len(marketcap_filtered) / len(volume_filtered) * 100 if volume_filtered else 0,
+            'time_seconds': time.time() - stage_start
+        })
+        
+        logger.info(f"Stage 4 complete: {len(marketcap_filtered)} passed market cap filter")
+        
+        # Stage 5: Volatility Filter (ATR)
+        stage_start = time.time()
+        volatility_filtered = []
+        
+        for symbol in marketcap_filtered:
+            try:
+                data = self.data_fetcher.get_stock_data(symbol)
+                if data and 'history' in data:
+                    df = calculate_all_indicators(data['history'])
+                    volatility = calculate_volatility_percent(df)
+                    
+                    if volatility >= MIN_VOLATILITY:
+                        volatility_filtered.append(symbol)
+            except:
+                pass
+        
+        stage_results.append({
+            'stage': 5,
+            'name': 'Volatility Filter',
+            'description': f'ATR > {MIN_VOLATILITY}%',
+            'input_count': len(marketcap_filtered),
+            'passed_count': len(volatility_filtered),
+            'failed_count': len(marketcap_filtered) - len(volatility_filtered),
+            'pass_rate': len(volatility_filtered) / len(marketcap_filtered) * 100 if marketcap_filtered else 0,
+            'time_seconds': time.time() - stage_start
+        })
+        
+        logger.info(f"Stage 5 complete: {len(volatility_filtered)} passed volatility filter")
+        
+        # Stage 6: Trend Filter (50-day MA)
+        stage_start = time.time()
+        trend_filtered = []
+        
+        for symbol in volatility_filtered:
+            try:
+                data = self.data_fetcher.get_stock_data(symbol)
+                if data and 'history' in data:
+                    df = calculate_all_indicators(data['history'])
+                    current_price = data['current_price']
+                    
+                    if 'SMA_50' in df.columns:
+                        sma_50 = df['SMA_50'].iloc[-1]
+                        if not pd.isna(sma_50) and current_price >= sma_50:
+                            trend_filtered.append(symbol)
+            except:
+                pass
+        
+        stage_results.append({
+            'stage': 6,
+            'name': 'Trend Filter',
+            'description': 'Price > 50-day MA',
+            'input_count': len(volatility_filtered),
+            'passed_count': len(trend_filtered),
+            'failed_count': len(volatility_filtered) - len(trend_filtered),
+            'pass_rate': len(trend_filtered) / len(volatility_filtered) * 100 if volatility_filtered else 0,
+            'time_seconds': time.time() - stage_start
+        })
+        
+        logger.info(f"Stage 6 complete: {len(trend_filtered)} passed trend filter")
+        
+        # Run normal screening logic on trend_filtered stocks
+        logger.info(f"Running detailed analysis on {len(trend_filtered)} candidates...")
+        final_results = self._scan_symbols(trend_filtered, universe_name, min_return)
+        
+        # Add stage 7-10 based on final results
+        all_stocks = len(final_results.get('trades', []))
+        
+        # Stage 7: Technical Scoring (implicit in _scan_symbols)
+        stage_results.append({
+            'stage': 7,
+            'name': 'Technical Scoring',
+            'description': 'Calculate MACD, RSI, Volume scores',
+            'input_count': len(trend_filtered),
+            'passed_count': all_stocks,
+            'failed_count': len(trend_filtered) - all_stocks,
+            'pass_rate': all_stocks / len(trend_filtered) * 100 if trend_filtered else 0,
+            'time_seconds': 0  # Already included in scan time
+        })
+        
+        # Stage 8: Return Estimation (implicit)
+        stage_results.append({
+            'stage': 8,
+            'name': 'Return Estimation',
+            'description': 'Estimate return potential',
+            'input_count': all_stocks,
+            'passed_count': all_stocks,
+            'failed_count': 0,
+            'pass_rate': 100.0 if all_stocks else 0,
+            'time_seconds': 0
+        })
+        
+        # Stage 9: Return Threshold
+        return_passed = len([t for t in final_results.get('trades', []) if t.estimated_return >= min_return])
+        stage_results.append({
+            'stage': 9,
+            'name': 'Return Threshold',
+            'description': f'Return > {min_return}%',
+            'input_count': all_stocks,
+            'passed_count': return_passed,
+            'failed_count': all_stocks - return_passed,
+            'pass_rate': return_passed / all_stocks * 100 if all_stocks else 0,
+            'time_seconds': 0
+        })
+        
+        # Stage 10: Confidence Threshold
+        final_passed = len([t for t in final_results.get('trades', []) 
+                           if t.estimated_return >= min_return and t.confidence >= min_confidence])
+        stage_results.append({
+            'stage': 10,
+            'name': 'Confidence Threshold',
+            'description': f'Confidence > {min_confidence}%',
+            'input_count': return_passed,
+            'passed_count': final_passed,
+            'failed_count': return_passed - final_passed,
+            'pass_rate': final_passed / return_passed * 100 if return_passed else 0,
+            'time_seconds': 0
+        })
+        
+        # Add stage breakdown to results
+        final_results['stage_breakdown'] = {
+            'stages': stage_results,
+            'total_time': time.time() - start_time,
+            'universe_name': universe_name,
+            'total_scanned': len(symbols)
+        }
+        
+        return final_results
